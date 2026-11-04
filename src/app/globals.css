@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #1e2352;
+  --color-ink-soft: #2d3475;
+  --color-paper: #eef2fa;
+  --color-chalk: #fbfcff;
+  --color-gold: #e3a21a;
+  --color-gold-deep: #b97a0c;
+  --color-leaf: #2e8b6f;
+  --color-rose: #c9484f;
+  --color-line: #d3dbef;
+
+  --font-display: "Bricolage Grotesque Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Newsreader Variable", Georgia, "Times New Roman", serif;
+}
+
+@layer base {
+  html,
+  body {
+    min-height: 100%;
+  }
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-display);
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-gold);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+  button {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@layer components {
+  /* Light graph paper, used on the roster screen */
+  .graph-paper {
+    background-color: var(--color-paper);
+    background-image:
+      linear-gradient(var(--color-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--color-line) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  /* Ink-blue graph paper, used on the projector stage */
+  .graph-ink {
+    background-color: var(--color-ink);
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.055) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  /* Golden bead from the Montessori maths material */
+  .bead {
+    background: radial-gradient(
+      circle at 32% 28%,
+      #fff0bf 0,
+      var(--color-gold) 40%,
+      var(--color-gold-deep) 100%
+    );
+    box-shadow:
+      0 2px 0 rgba(0, 0, 0, 0.18),
+      inset 0 -2px 3px rgba(90, 50, 0, 0.35);
+  }
+  .bead-empty {
+    background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04) 65%);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The one orchestrated moment: a question slide arriving on the stage */
+  .slate-in {
+    animation: slate-in 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+}
+
+@keyframes slate-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slate-in {
+    animation: none;
+  }
+  * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}
+
+/* KaTeX should follow the surrounding colour and feel a bit larger on the stage */
+.katex {
+  font-size: 1.08em;
+}
