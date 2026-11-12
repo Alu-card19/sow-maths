@@ -1,0 +1,32 @@
+[
+  {
+    "studentId": "9cdf68ec-c31c-40ac-be76-379fd151ff13",
+    "studentName": "Amos Naomi",
+    "level": "JSS2",
+    "roundNumber": 1,
+    "score": 0,
+    "questionsAttempted": 1,
+    "correctAnswers": 0,
+    "incorrectAnswers": 1,
+    "sessionDurationMinutes": 2,
+    "completionTimeSeconds": 6,
+    "completedAt": "2026-11-12T04:34:36.768Z",
+    "id": "9cdf68ec-c31c-40ac-be76-379fd151ff13-1794458078125",
+    "createdAt": "2026-11-12T04:34:38.125Z"
+  },
+  {
+    "studentId": "f9db15f5-ecd7-40e0-9218-8309385d4fc3",
+    "studentName": "Osei joel",
+    "level": "JSS2",
+    "roundNumber": 13,
+    "score": 70,
+    "questionsAttempted": 13,
+    "correctAnswers": 91,
+    "incorrectAnswers": -78,
+    "sessionDurationMinutes": 2,
+    "completionTimeSeconds": 75,
+    "completedAt": "2026-11-12T04:49:06.533Z",
+    "id": "f9db15f5-ecd7-40e0-9218-8309385d4fc3-1794458949446",
+    "createdAt": "2026-11-12T04:49:09.446Z"
+  }
+]

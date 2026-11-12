@@ -11,8 +11,7 @@ type Props = {
   deckSize: number;
   called: number;
   onShow: () => void;
-  onReveal: () => void;
-  onMark: (result: "correct" | "wrong") => void;
+  onSelectAnswer: (selectedOption: string) => void;
   onNextQuestion: () => void;
   onNextStudent: () => void;
   onTogglePause: () => void;
@@ -30,7 +29,7 @@ function TimerRing({ left, total, paused }: { left: number; total: number; pause
     <div
       className="relative flex size-24 items-center justify-center sm:size-28"
       role="timer"
-      aria-label={`${left} seconds left`}
+      aria-label={`${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")} left`}
     >
       <svg viewBox="0 0 100 100" className="absolute inset-0 -rotate-90" aria-hidden>
         <circle cx="50" cy="50" r={r} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="7" />
@@ -48,11 +47,11 @@ function TimerRing({ left, total, paused }: { left: number; total: number; pause
         />
       </svg>
       <span
-        className={`tabular text-4xl font-extrabold sm:text-5xl ${urgent ? "text-rose" : "text-chalk"} ${
+        className={`tabular text-3xl font-extrabold sm:text-4xl ${urgent ? "text-rose" : "text-chalk"} ${
           paused ? "opacity-50" : ""
         }`}
       >
-        {left}
+        {Math.floor(left / 60)}:{String(Math.floor(left % 60)).padStart(2, "0")}
       </span>
     </div>
   );
@@ -64,8 +63,7 @@ export function Stage({
   deckSize,
   called,
   onShow,
-  onReveal,
-  onMark,
+  onSelectAnswer,
   onNextQuestion,
   onNextStudent,
   onTogglePause,
@@ -83,13 +81,8 @@ export function Stage({
       if (k === " " || k === "enter") {
         e.preventDefault();
         if (phase === "ready") onShow();
-        else if (phase === "question") onReveal();
         else if (result) onNextQuestion();
-      } else if (k === "c" && phase === "revealed" && !result) {
-        onMark("correct");
-      } else if (k === "x" && phase === "revealed" && !result) {
-        onMark("wrong");
-      } else if (k === "n" && phase === "revealed" && result) {
+      } else if (k === "n" && result) {
         onNextStudent();
       } else if (k === "p" && phase === "question") {
         onTogglePause();
@@ -99,7 +92,7 @@ export function Stage({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [phase, result, onShow, onReveal, onMark, onNextQuestion, onNextStudent, onTogglePause, onExit]);
+  }, [phase, result, onShow, onNextQuestion, onNextStudent, onTogglePause, onExit]);
 
   return (
     <div className="graph-ink flex min-h-dvh flex-col text-chalk">
@@ -167,7 +160,7 @@ export function Stage({
                 className="rounded-xl border-2 border-transparent p-1 disabled:cursor-default"
                 aria-label={round.paused ? "Resume timer" : "Pause timer"}
               >
-                <TimerRing left={round.secondsLeft} total={round.totalSeconds} paused={round.paused} />
+                <TimerRing left={round.sessionSecondsLeft} total={round.sessionTotalSeconds} paused={round.paused} />
               </button>
             </div>
 
@@ -187,20 +180,44 @@ export function Stage({
             {options && (
               <ul className="grid gap-3 sm:grid-cols-2 sm:gap-4">
                 {options.map((opt, i) => {
-                  const isCorrect = phase === "revealed" && i === correctIndex;
-                  const dim = phase === "revealed" && correctIndex !== -1 && i !== correctIndex;
+                  const isCorrect = i === correctIndex;
+                  const isSelected = round.selectedAnswer === opt;
+                  const answered = round.result !== null;
+                  const canSelect = phase === "question" && !round.result && !round.selectedAnswer;
+                  const showResult = answered && (isCorrect || isSelected);
+                  
                   return (
                     <li
                       key={opt + i}
-                      className={`flex items-center gap-4 rounded-2xl border-2 px-5 py-4 transition-colors ${
-                        isCorrect
+                      className={`flex items-center gap-4 rounded-2xl border-2 px-5 py-4 transition-all ${
+                        answered && isCorrect
                           ? "border-leaf bg-leaf/25"
+                          : answered && isSelected && !isCorrect
+                          ? "border-rose bg-rose/25"
+                          : answered && !isCorrect && !isSelected
+                          ? "border-chalk/20 bg-chalk/5 opacity-40"
+                          : canSelect
+                          ? "border-chalk/20 bg-chalk/5 cursor-pointer hover:border-chalk/40"
                           : "border-chalk/20 bg-chalk/5"
-                      } ${dim ? "opacity-40" : ""}`}
+                      }`}
+                      onClick={() => canSelect && onSelectAnswer(opt)}
+                      role="button"
+                      tabIndex={canSelect ? 0 : -1}
+                      aria-disabled={!canSelect}
+                      onKeyDown={(e) => {
+                        if (canSelect && (e.key === "Enter" || e.key === " ")) {
+                          e.preventDefault();
+                          onSelectAnswer(opt);
+                        }
+                      }}
                     >
                       <span
                         className={`flex size-11 shrink-0 items-center justify-center rounded-full text-xl font-extrabold ${
-                          isCorrect ? "bg-leaf text-chalk" : "bead text-ink"
+                          answered && isCorrect
+                            ? "bg-leaf text-chalk"
+                            : answered && isSelected && !isCorrect
+                            ? "bg-rose text-chalk"
+                            : "bead text-ink"
                         }`}
                       >
                         {LETTERS[i]}
@@ -232,15 +249,8 @@ export function Stage({
       {/* Controls and bead rail */}
       <footer className="flex flex-col gap-5 px-5 pb-6 pt-2 sm:px-10">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-3">
-          {phase === "question" && (
+          {phase === "question" && !result && (
             <>
-              <button
-                type="button"
-                onClick={onReveal}
-                className="bead rounded-2xl px-7 py-4 text-xl font-extrabold text-ink"
-              >
-                Reveal answer
-              </button>
               <button
                 type="button"
                 onClick={onTogglePause}
@@ -248,7 +258,7 @@ export function Stage({
               >
                 {round.paused ? "Resume timer" : "Pause timer"}
               </button>
-              {round.secondsLeft === 0 && (
+              {round.sessionSecondsLeft === 0 && (
                 <p className="text-xl font-extrabold text-rose" role="status">
                   Time is up
                 </p>
@@ -256,26 +266,7 @@ export function Stage({
             </>
           )}
 
-          {phase === "revealed" && !result && (
-            <>
-              <button
-                type="button"
-                onClick={() => onMark("correct")}
-                className="rounded-2xl bg-leaf px-7 py-4 text-xl font-extrabold text-chalk hover:brightness-110"
-              >
-                Correct, +{points}
-              </button>
-              <button
-                type="button"
-                onClick={() => onMark("wrong")}
-                className="rounded-2xl bg-rose px-7 py-4 text-xl font-extrabold text-chalk hover:brightness-110"
-              >
-                Wrong
-              </button>
-            </>
-          )}
-
-          {phase === "revealed" && result && (
+          {result && (
             <>
               <p
                 role="status"
@@ -283,14 +274,14 @@ export function Stage({
                   result === "correct" ? "bg-leaf/25 text-chalk" : "bg-rose/25 text-chalk"
                 }`}
               >
-                {result === "correct" ? `Correct, ${student.name} scores ${points}` : "No points this time"}
+                {result === "correct" ? `✓ Correct! +${points} points` : "✗ Incorrect - 0 points"}
               </p>
               <button
                 type="button"
                 onClick={onNextQuestion}
                 className="bead rounded-2xl px-7 py-4 text-xl font-extrabold text-ink"
               >
-                Next question for {student.name}
+                Next question
               </button>
               <button
                 type="button"

@@ -8,6 +8,7 @@ import { shuffle, uid } from "@/lib/shuffle";
 import {
   DEFAULT_POINTS,
   DEFAULT_SECONDS,
+  DEFAULT_ROUND_DURATION_MINUTES,
   LEVELS,
   type Level,
   type Round,
@@ -29,6 +30,7 @@ export default function Console() {
   const [level, setLevel] = useState<Level>("JSS1");
   const [round, setRound] = useState<Round | null>(null);
   const [called, setCalled] = useState<PerLevel<number>>(() => perLevel(() => 0));
+  const [roundDurationMinutes, setRoundDurationMinutes] = useState(DEFAULT_ROUND_DURATION_MINUTES);
 
   // The shuffled decks live in refs. They are built once per page load, so every
   // refresh gives a completely new order, and a question never repeats until the deck runs out.
@@ -86,21 +88,50 @@ export default function Console() {
     (studentId: string, lvl: Level, questionNo = 1) => {
       const slide = draw(lvl);
       if (!slide) return;
-      const seconds = slide.seconds ?? DEFAULT_SECONDS;
-      setRound({
-        studentId,
-        level: lvl,
-        slide,
-        options: slide.options ? shuffle(slide.options) : null,
-        phase: questionNo === 1 ? "ready" : "question",
-        secondsLeft: seconds,
-        totalSeconds: seconds,
-        paused: false,
-        result: null,
-        questionNo,
-      });
+      
+      // If this is a new session (questionNo === 1), calculate session timing
+      if (questionNo === 1) {
+        const sessionTotalSeconds = roundDurationMinutes * 60;
+        setRound({
+          studentId,
+          level: lvl,
+          slide,
+          options: slide.options ? shuffle(slide.options) : null,
+          phase: "ready",
+          secondsLeft: slide.seconds ?? DEFAULT_SECONDS, // Not used for session timer, but kept for compatibility
+          totalSeconds: slide.seconds ?? DEFAULT_SECONDS,
+          paused: false,
+          result: null,
+          questionNo,
+          sessionSecondsLeft: sessionTotalSeconds,
+          sessionTotalSeconds: sessionTotalSeconds,
+          roundStartedAt: Date.now(),
+          selectedAnswer: null,
+        });
+      } else {
+        // Continue with the existing session timer
+        setRound((prevRound) => {
+          if (!prevRound) return null;
+          return {
+            studentId,
+            level: lvl,
+            slide,
+            options: slide.options ? shuffle(slide.options) : null,
+            phase: "question",
+            secondsLeft: slide.seconds ?? DEFAULT_SECONDS,
+            totalSeconds: slide.seconds ?? DEFAULT_SECONDS,
+            paused: prevRound.paused,
+            result: null,
+            questionNo,
+            sessionSecondsLeft: prevRound.sessionSecondsLeft,
+            sessionTotalSeconds: prevRound.sessionTotalSeconds,
+            roundStartedAt: prevRound.roundStartedAt,
+            selectedAnswer: null,
+          };
+        });
+      }
     },
-    [draw],
+    [draw, roundDurationMinutes],
   );
 
   /** Whoever has had the fewest turns goes next, with ties broken at random. */
@@ -116,21 +147,82 @@ export default function Console() {
     [students],
   );
 
-  // Countdown
+  /**
+   * Save a completed round result to the database
+   */
+  const saveRoundResult = useCallback(
+    async (completedRound: Round, allStudents: Student[]) => {
+      try {
+        const student = allStudents.find((s) => s.id === completedRound.studentId);
+        if (!student) return;
+
+        const completionTimeSeconds = Math.round((Date.now() - completedRound.roundStartedAt) / 1000);
+        const correctAnswers = student.turns > 0 ? Math.max(0, Math.floor((student.score / DEFAULT_POINTS) * completedRound.questionNo)) : 0;
+        const incorrectAnswers = completedRound.questionNo - correctAnswers;
+
+        const result = {
+          studentId: student.id,
+          studentName: student.name,
+          level: student.level,
+          campus: student.campus,
+          roundNumber: completedRound.questionNo,
+          score: student.score,
+          questionsAttempted: completedRound.questionNo,
+          correctAnswers: correctAnswers,
+          incorrectAnswers: incorrectAnswers,
+          sessionDurationMinutes: roundDurationMinutes,
+          completionTimeSeconds: completionTimeSeconds,
+          completedAt: new Date().toISOString(),
+        };
+
+        const response = await fetch("/api/results", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(result),
+        });
+
+        if (!response.ok) {
+          console.error("Failed to save result:", await response.text());
+        }
+      } catch (error) {
+        console.error("Error saving round result:", error);
+      }
+    },
+    [roundDurationMinutes],
+  );
+
+  // Countdown for session-level timer
   const phase = round?.phase;
   const paused = round?.paused;
   const slideId = round?.slide.id;
   useEffect(() => {
     if (phase !== "question" || paused) return;
     const t = setInterval(() => {
-      setRound((r) =>
-        r && r.phase === "question" && !r.paused && r.secondsLeft > 0
-          ? { ...r, secondsLeft: r.secondsLeft - 1 }
-          : r,
-      );
+      setRound((r) => {
+        if (r && r.phase === "question" && !r.paused && r.sessionSecondsLeft > 0) {
+          const newSecondsLeft = r.sessionSecondsLeft - 1;
+          // If session time expires, automatically mark the round as ended
+          if (newSecondsLeft === 0) {
+            // Mark the current question as wrong (time expired)
+            setStudents((prev) => {
+              const updated = prev.map((s) =>
+                s.id === r.studentId ? { ...s, turns: s.turns + 1 } : s,
+              );
+              // Save the result after updating students
+              saveRoundResult(r, updated);
+              return updated;
+            });
+            // Automatically end the session
+            setTimeout(() => setRound(null), 1000);
+            return { ...r, sessionSecondsLeft: newSecondsLeft, phase: "revealed", result: "wrong", paused: true };
+          }
+          return { ...r, sessionSecondsLeft: newSecondsLeft };
+        }
+        return r;
+      });
     }, 1000);
     return () => clearInterval(t);
-  }, [phase, paused, slideId]);
+  }, [phase, paused, slideId, saveRoundResult]);
 
   const onAdd = (names: string[]) => {
     setStudents((prev) => [
@@ -167,6 +259,35 @@ export default function Console() {
     [round],
   );
 
+  /** Select an answer option and immediately verify it */
+  const onSelectAnswer = useCallback(
+    (selectedOption: string) => {
+      if (!round || round.result || round.selectedAnswer) return; // Prevent changing answer after selection
+      
+      // Immediately check if answer is correct
+      const isCorrect = selectedOption === round.slide.answer;
+      const gained = isCorrect ? (round.slide.points ?? DEFAULT_POINTS) : 0;
+      
+      // Update students with score
+      setStudents((prev) =>
+        prev.map((s) =>
+          s.id === round.studentId ? { ...s, turns: s.turns + 1, score: s.score + gained } : s,
+        ),
+      );
+      
+      // Mark the answer result
+      setRound((r) => {
+        if (!r) return null;
+        return {
+          ...r,
+          selectedAnswer: selectedOption,
+          result: isCorrect ? "correct" : "wrong",
+        };
+      });
+    },
+    [round],
+  );
+
   /** Same student, another question. */
   const onNextQuestion = useCallback(() => {
     if (!round) return;
@@ -184,15 +305,17 @@ export default function Console() {
     () => setRound((r) => (r && r.phase === "ready" ? { ...r, phase: "question" } : r)),
     [],
   );
-  const onReveal = useCallback(
-    () => setRound((r) => (r && r.phase === "question" ? { ...r, phase: "revealed", paused: true } : r)),
-    [],
-  );
   const onTogglePause = useCallback(
     () => setRound((r) => (r && r.phase === "question" ? { ...r, paused: !r.paused } : r)),
     [],
   );
-  const onExit = useCallback(() => setRound(null), []);
+  const onExit = useCallback(() => {
+    // Save the result before exiting
+    if (round) {
+      saveRoundResult(round, students);
+    }
+    setRound(null);
+  }, [round, students, saveRoundResult]);
 
   if (!ready) {
     return <div className="graph-paper min-h-dvh" aria-busy="true" />;
@@ -207,8 +330,7 @@ export default function Console() {
         deckSize={QUESTIONS[round.level].length}
         called={called[round.level]}
         onShow={onShow}
-        onReveal={onReveal}
-        onMark={onMark}
+        onSelectAnswer={onSelectAnswer}
         onNextQuestion={onNextQuestion}
         onNextStudent={onNextStudent}
         onTogglePause={onTogglePause}
@@ -231,6 +353,8 @@ export default function Console() {
       onResetScores={onResetScores}
       codeNamesMissing={missingNames.length}
       onLoadFromCode={() => onAdd(missingNames)}
+      roundDurationMinutes={roundDurationMinutes}
+      onRoundDurationChange={setRoundDurationMinutes}
     />
   );
 }

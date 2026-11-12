@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { LEVELS, levelLabel, type Level, type Student } from "@/lib/types";
+import { LEVELS, levelLabel, type Level, type Student, AVAILABLE_DURATIONS } from "@/lib/types";
 
 type Props = {
   level: Level;
@@ -17,6 +17,8 @@ type Props = {
   onResetScores: () => void;
   codeNamesMissing: number;
   onLoadFromCode: () => void;
+  roundDurationMinutes: number;
+  onRoundDurationChange: (minutes: number) => void;
 };
 
 export function Roster({
@@ -32,6 +34,8 @@ export function Roster({
   onResetScores,
   codeNamesMissing,
   onLoadFromCode,
+  roundDurationMinutes,
+  onRoundDurationChange,
 }: Props) {
   const [draft, setDraft] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
@@ -58,9 +62,14 @@ export function Roster({
         <header className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-lg font-medium text-ink-soft">Seat of Wisdom Montessori</p>
-            <Link href="/play" className="text-base font-semibold underline underline-offset-4 hover:text-ink-soft">
-              Student page
-            </Link>
+            <div className="flex gap-3">
+              <Link href="/results" className="text-base font-semibold underline underline-offset-4 hover:text-ink-soft">
+                View results
+              </Link>
+              <Link href="/play" className="text-base font-semibold underline underline-offset-4 hover:text-ink-soft">
+                Student page
+              </Link>
+            </div>
           </div>
           <h1 className="text-5xl font-extrabold leading-[0.95] tracking-tight sm:text-7xl">
             Maths Olympiad
@@ -157,6 +166,40 @@ export function Roster({
                   ? "Add them in src/data/questions.ts, then redeploy."
                   : `Shuffled fresh each time this page loads. ${called} called so far.`}
               </p>
+              
+              {/* Round duration settings */}
+              <div className="mt-4 flex flex-col gap-3">
+                <label htmlFor="duration" className="text-base font-medium text-ink-soft">
+                  Round duration:
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {AVAILABLE_DURATIONS.map((duration) => (
+                    <button
+                      key={duration}
+                      type="button"
+                      onClick={() => onRoundDurationChange(duration)}
+                      className={`rounded-lg px-3 py-2 font-bold transition-colors ${
+                        roundDurationMinutes === duration
+                          ? "bg-ink text-chalk"
+                          : "border-2 border-ink/30 hover:border-ink"
+                      }`}
+                    >
+                      {duration}m
+                    </button>
+                  ))}
+                </div>
+                <input
+                  id="duration"
+                  type="number"
+                  min="1"
+                  max="60"
+                  value={roundDurationMinutes}
+                  onChange={(e) => onRoundDurationChange(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-24 rounded-lg border-2 border-ink/30 bg-chalk px-3 py-2 text-base font-medium outline-none focus:border-ink"
+                  placeholder="Custom duration"
+                />
+              </div>
+
               <button
                 type="button"
                 onClick={onCallNext}
